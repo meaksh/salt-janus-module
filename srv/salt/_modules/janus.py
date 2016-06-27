@@ -8,14 +8,23 @@ Module to manage Janus WebRTC Gateway
 
 import salt.utils
 from salt.exceptions import CommandExecutionError
-import logging
-import random
 import json
+import logging
+import os
+import random
 import requests
 
 __virtualname__ = 'janus'
 
 log = logging.getLogger(__name__)
+
+JANUS_API_PROTO = "http"
+JANUS_API_HOSTNAME = "localhost"
+JANUS_API_PORT = "8088"
+JANUS_API_BASE = "janus"
+JANUS_CFG_BASE = "/etc/janus/"
+JANUS_VIDEOROOM_CFG = os.path.join(JANUS_CFG_BASE, "janus.plugin.videoroom.cfg")
+JANUS_AUDIOROOM_CFG = os.path.join(JANUS_CFG_BASE, "janus.plugin.audiobridge.cfg")
 
 
 def __virtual__():
@@ -26,6 +35,9 @@ def __virtual__():
 
 
 class JanusSession(object):
+    class JanusException(Exception):
+        pass
+
     def __init__(self, *args, **kwargs):
         self.set_config()
 
@@ -33,18 +45,28 @@ class JanusSession(object):
         if not opts:
             opts = dict()
 
-        self._janus_proto = opts.get("janus_proto", "http")
-        self._janus_uri = opts.get("janus_hostname", "localhost")
-        self._janus_port = opts.get("janus_port", "8088")
-        self._janus_base = opts.get("janus_base", "janus")
+        self._janus_proto = opts.get("janus_proto", JANUS_API_PROTO)
+        self._janus_uri = opts.get("janus_hostname", JANUS_API_HOSTNAME)
+        self._janus_port = opts.get("janus_port", JANUS_API_PORT)
+        self._janus_base = opts.get("janus_base", JANUS_API_BASE)
 
         self._janus_api_root = "{0}://{1}:{2}/{3}".format(self._janus_proto,
                                                           self._janus_uri,
                                                           self._janus_port,
                                                           self._janus_base)
 
+        self._janus_videoroom_cfg = opts.get("janus_videoroom_cfg",
+                                             JANUS_VIDEOROOM_CFG)
+        self._janus_audioroom_cfg = opts.get("janus_audiobridge_cfg",
+                                             JANUS_AUDIOROOM_CFG)
+
     def _random_token(self):
         return "%008x" % random.getrandbits(64)
+
+    def _get_server_info(self, config):
+        self.set_config(config)
+        resp = requests.get(self._janus_api_root + "/info")
+        return resp.json()
 
     def _create_instance(self, config):
         self.set_config(config)
@@ -57,6 +79,8 @@ class JanusSession(object):
         data = {"janus": "attach", "plugin": plugin_name,
                 "transaction": self._random_token()}
         resp = requests.post(session_uri, json.dumps(data))
+        if not resp.json().get("data"):
+            raise self.JanusException(resp.json()['error']['reason'])
         return resp.json().get("data")
         
     def _message_request(self, session_id, plugin_id, message):
@@ -66,6 +90,23 @@ class JanusSession(object):
                 "transaction": self._random_token()}
         resp = requests.post(plugin_uri, json.dumps(data))
         return resp.json()
+
+    def _parse_rooms_list_response(self, response):
+        item = response['plugindata']['data']['list']
+        ret = {}
+        for attr in item:
+            name = attr.pop('room')
+            ret[name] = attr
+        return ret
+
+    def _save_rooms_in_file(self, rooms, filename):
+        content = []
+        for room in rooms:
+            content.append("[{0}]".format(room))
+            [content.append("{0} = {1}".format(attr, rooms[room][attr])) for attr in rooms[room]]
+            content.append("")
+        __salt__['file.write'](filename, "\n".join(content))
+        return True
 
 
 janus = JanusSession()
@@ -85,15 +126,36 @@ def list_videorooms(config=None):
         plugin = janus._attach_plugin(instance['id'], "janus.plugin.videoroom")
         message = {"request": "list"}
         resp = janus._message_request(instance['id'], plugin['id'], message)
-        return resp
-    except requests.exceptions.ConnectionError as exc:
+        return janus._parse_rooms_list_response(resp)
+    except Exception as exc:
         raise CommandExecutionError(
             'Error encountered while listing Janus videorooms: {0}'
             .format(exc)
         )
 
+def list_audiorooms(config=None):
+    '''
+    List the current list of audiorooms availables in Janus service instance
 
-def create_videoroom(name, publishers=20, bitrate=64, id=None, config=None):
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.list_audiorooms
+    '''
+    try:
+        instance = janus._create_instance(config)
+        plugin = janus._attach_plugin(instance['id'], "janus.plugin.audiobridge")
+        message = {"request": "list"}
+        resp = janus._message_request(instance['id'], plugin['id'], message)
+        return janus._parse_rooms_list_response(resp)
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while listing Janus audiorooms: {0}'
+            .format(exc)
+        )
+
+def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=None):
     '''
     Create a new videoroom in Janus service instance
 
@@ -107,12 +169,76 @@ def create_videoroom(name, publishers=20, bitrate=64, id=None, config=None):
     try:
         instance = janus._create_instance(config)
         plugin = janus._attach_plugin(instance['id'], "janus.plugin.videoroom")
-        message = {"request": "create", "id": id, "description": name,
-                   "bitrate": bitrate, "publishers": publishers}
+        message = {"request": "create", "description": name,
+                   "bitrate": bitrate, "publishers": publishers,
+                   "permanent": permanent}
         resp = janus._message_request(instance['id'], plugin['id'], message)
         return resp
-    except requests.exceptions.ConnectionError as exc:
+    except Exception as exc:
         raise CommandExecutionError(
             'Error encountered while creating Janus videoroom: {0}'
+            .format(exc)
+        )
+
+def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record=False, config=None):
+    '''
+    Create a new videoroom in Janus service instance
+
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.create_audioroom "my tests videoroom"
+        salt '*' janus.create_audioroom testroom sampling_rate=64000 publishers=20
+    '''
+    try:
+        instance = janus._create_instance(config)
+        plugin = janus._attach_plugin(instance['id'], "janus.plugin.audiobridge")
+        message = {"request": "create", "description": name,
+                   "sampling": sampling, "permanent": permanent}
+        resp = janus._message_request(instance['id'], plugin['id'], message)
+        return resp
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while creating Janus videoroom: {0}'
+            .format(exc)
+        )
+
+def info(config=None):
+    '''
+    Show current Janus server information
+
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.info
+    '''
+    try:
+        return janus._get_server_info(config)
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while getting Janus server information: {0}'
+            .format(exc)
+        )
+
+def save_rooms_status(config=None):
+    '''
+    Save current created audiorooms and videorooms inside the Janus
+    plugin config file. It persistent the room setting
+
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.save_rooms_status
+    '''
+    try:
+        janus._save_rooms_in_file(list_audiorooms(config), janus._janus_audioroom_cfg)
+        janus._save_rooms_in_file(list_videorooms(config), janus._janus_videoroom_cfg)
+        return True
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while saving Janus videorooms: {0}'
             .format(exc)
         )
