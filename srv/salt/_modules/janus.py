@@ -6,13 +6,16 @@ Module to manage Janus WebRTC Gateway
 :depends: - ``janus`` https://janus.conf.meetecho.com/
 '''
 
-import salt.utils
+from ConfigParser import ConfigParser
 from salt.exceptions import CommandExecutionError
+import salt.utils
+import jinja2
 import json
 import logging
 import os
 import random
 import requests
+
 
 __virtualname__ = 'janus'
 
@@ -99,14 +102,36 @@ class JanusSession(object):
             ret[name] = attr
         return ret
 
+    def _parse_config_file(self, filename):
+        if __salt__['file.file_exists'](filename):
+            config = ConfigParser()
+            config.readfp(salt.utils.fopen(filename))
+            ret = {}
+            for sect in config.sections():
+                ret[sect] = dict(config.items(sect))
+            return ret
+        else:
+            raise self.JanusException("Config file '{0}' does not exist" % filename)
+
+    def _update_config_file(self, config, filename):
+        if __salt__['file.file_exists'](filename):
+            pconfig = ConfigParser()
+            for sect in config:
+                section_dict = config.get(sect)
+                pconfig.add_section(sect)
+                [pconfig.set(sect, key, section_dict[key]) for key in section_dict]
+            pconfig.write(salt.utils.fopen(filename, "wb"))
+        else:
+            raise self.JanusException("Config file '{0}' does not exist" % filename)
+
     def _save_rooms_in_file(self, rooms, filename):
-        content = []
+        config = self._parse_config_file(filename)
         for room in rooms:
-            content.append("[{0}]".format(room))
-            [content.append("{0} = {1}".format(attr, rooms[room][attr])) for attr in rooms[room]]
-            content.append("")
-        __salt__['file.write'](filename, "\n".join(content))
-        return True
+            if room is not str(room):
+                item = rooms.pop(room)
+                rooms[str(room)] = item
+        config.update(rooms)
+        self._update_config_file(config, filename)
 
 
 janus = JanusSession()
