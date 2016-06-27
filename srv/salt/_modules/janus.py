@@ -111,6 +111,25 @@ class JanusSession(object):
 
 janus = JanusSession()
 
+def info(config=None):
+    '''
+    Show current Janus server information
+
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.info
+    '''
+    try:
+        return janus._get_server_info(config)
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while getting Janus server information: {0}'
+            .format(exc)
+        )
+
+
 def list_videorooms(config=None):
     '''
     List the current list of videorooms availables in Janus service instance
@@ -133,6 +152,7 @@ def list_videorooms(config=None):
             .format(exc)
         )
 
+
 def list_audiorooms(config=None):
     '''
     List the current list of audiorooms availables in Janus service instance
@@ -154,6 +174,7 @@ def list_audiorooms(config=None):
             'Error encountered while listing Janus audiorooms: {0}'
             .format(exc)
         )
+
 
 def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=None):
     '''
@@ -180,6 +201,7 @@ def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=Non
             .format(exc)
         )
 
+
 def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record=False, config=None):
     '''
     Create a new videoroom in Janus service instance
@@ -204,23 +226,6 @@ def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record
             .format(exc)
         )
 
-def info(config=None):
-    '''
-    Show current Janus server information
-
-    CLI example:
-
-    .. code-block:: bash
-
-        salt '*' janus.info
-    '''
-    try:
-        return janus._get_server_info(config)
-    except Exception as exc:
-        raise CommandExecutionError(
-            'Error encountered while getting Janus server information: {0}'
-            .format(exc)
-        )
 
 def save_rooms_status(config=None):
     '''
