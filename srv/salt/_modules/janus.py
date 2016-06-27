@@ -54,13 +54,16 @@ class JanusSession(object):
 
     def _attach_plugin(self, session_id, plugin_name):
         session_uri = self._janus_api_root + "/" + str(session_id)
-        data = {"janus": "attach", "plugin": plugin_name, "transaction": self._random_token()}
+        data = {"janus": "attach", "plugin": plugin_name,
+                "transaction": self._random_token()}
         resp = requests.post(session_uri, json.dumps(data))
         return resp.json().get("data")
         
     def _message_request(self, session_id, plugin_id, message):
-        plugin_uri = self._janus_api_root + "/" + str(session_id) + "/" + str(plugin_id)
-        data = {"janus": "message", "body": message, "transaction": self._random_token()}
+        plugin_uri = (self._janus_api_root + "/" + str(session_id) +
+                     "/" + str(plugin_id))
+        data = {"janus": "message", "body": message,
+                "transaction": self._random_token()}
         resp = requests.post(plugin_uri, json.dumps(data))
         return resp.json()
 
@@ -99,16 +102,17 @@ def create_videoroom(name, publishers=20, bitrate=64, id=None, config=None):
     .. code-block:: bash
 
         salt '*' janus.create_videoroom "my tests videoroom"
-        salt '*' janus.create_videoroom testvideoroom bitrate=128 publishers=50
+        salt '*' janus.create_videoroom testroom bitrate=128 publishers=50
     '''
     try:
         instance = janus._create_instance(config)
         plugin = janus._attach_plugin(instance['id'], "janus.plugin.videoroom")
-        message = {"request": "create", "id": id, "description": name, "bitrate": bitrate, "publishers": publishers}
+        message = {"request": "create", "id": id, "description": name,
+                   "bitrate": bitrate, "publishers": publishers}
         resp = janus._message_request(instance['id'], plugin['id'], message)
         return resp
     except requests.exceptions.ConnectionError as exc:
         raise CommandExecutionError(
-            'Error encountered while listing Janus videorooms: {0}'
+            'Error encountered while creating Janus videoroom: {0}'
             .format(exc)
         )
