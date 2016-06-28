@@ -201,25 +201,31 @@ def list_audiorooms(config=None):
         )
 
 
-def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=None):
+def list_participants(room_id=None, config=None):
     '''
-    Create a new videoroom in Janus service instance
+    List the participant of a video or audio room in a Janus service instance
 
     CLI example:
 
     .. code-block:: bash
 
-        salt '*' janus.create_videoroom "my tests videoroom"
-        salt '*' janus.create_videoroom testroom bitrate=128 publishers=50
+        salt '*' janus.list_participants 12345
     '''
     try:
         instance = janus._create_instance(config)
-        plugin = janus._attach_plugin(instance['id'], "janus.plugin.videoroom")
-        message = {"request": "create", "description": name,
-                   "bitrate": bitrate, "publishers": publishers,
-                   "permanent": permanent}
-        resp = janus._message_request(instance['id'], plugin['id'], message)
-        return resp
+        room_list = [room_id] if room_id else list_audiorooms().keys() + list_videorooms().keys()
+        ret = {}
+        for plugin_name in ["janus.plugin.videoroom", "janus.plugin.audiobridge"]:
+            ret[plugin_name] = {}
+            for room_id in room_list:
+                plugin = janus._attach_plugin(instance['id'], plugin_name)
+                message = {"request": "listparticipants", "room": room_id}
+                resp = janus._message_request(instance['id'], plugin['id'], message)
+                room_participants = resp['plugindata']['data'].get("participants", [])
+                if room_participants:
+                    ret[plugin_name].update({room_id: room_participants})
+            ret.pop(plugin_name) if not ret[plugin_name] else None
+        return ret
     except Exception as exc:
         raise CommandExecutionError(
             'Error encountered while creating Janus videoroom: {0}'
@@ -229,20 +235,43 @@ def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=Non
 
 def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record=False, config=None):
     '''
-    Create a new videoroom in Janus service instance
+    Create a new audioroom in Janus service instance
 
     CLI example:
 
     .. code-block:: bash
 
         salt '*' janus.create_audioroom "my tests videoroom"
-        salt '*' janus.create_audioroom testroom sampling_rate=64000 publishers=20
+        salt '*' janus.create_audioroom testroom publishers=20
     '''
     try:
         instance = janus._create_instance(config)
         plugin = janus._attach_plugin(instance['id'], "janus.plugin.audiobridge")
         message = {"request": "create", "description": name,
                    "sampling": sampling, "permanent": permanent}
+        resp = janus._message_request(instance['id'], plugin['id'], message)
+        return resp
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while creating Janus audioroom: {0}'
+            .format(exc)
+        )
+
+
+def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=None):
+    '''
+    Create a new videoroom in Janus service instance
+    CLI example:
+    .. code-block:: bash
+        salt '*' janus.create_videoroom "my tests videoroom"
+        salt '*' janus.create_videoroom testroom bitrate=128 publishers=50
+    '''
+    try:
+        instance = janus._create_instance(config)
+        plugin = janus._attach_plugin(instance['id'], "janus.plugin.videoroom")
+        message = {"request": "create", "description": name,
+                   "bitrate": bitrate, "publishers": publishers,
+                   "permanent": permanent}
         resp = janus._message_request(instance['id'], plugin['id'], message)
         return resp
     except Exception as exc:
