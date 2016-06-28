@@ -228,7 +228,7 @@ def list_participants(room_id=None, config=None):
         return ret
     except Exception as exc:
         raise CommandExecutionError(
-            'Error encountered while creating Janus videoroom: {0}'
+            'Error encountered while listing participants: {0}'
             .format(exc)
         )
 
@@ -299,5 +299,27 @@ def save_rooms_status(config=None):
     except Exception as exc:
         raise CommandExecutionError(
             'Error encountered while saving Janus videorooms: {0}'
+            .format(exc)
+        )
+
+
+def plugin_message(plugin, message, config=None):
+    '''
+    Send a custom message to plugin in a Janus service instance
+
+    CLI example:
+
+    .. code-block:: bash
+
+        salt '*' janus.plugin_message "janus.plugin.videoroom" message='{"request": "list"}'
+    '''
+    try:
+        instance = janus._create_instance(config)
+        plugin_id = janus._attach_plugin(instance['id'], plugin)['id']
+        resp = janus._message_request(instance['id'], plugin_id, message)
+        return resp
+    except Exception as exc:
+        raise CommandExecutionError(
+            'Error encountered while sending message to Janus plugin: {0}'
             .format(exc)
         )
