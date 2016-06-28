@@ -250,6 +250,7 @@ def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record
         message = {"request": "create", "description": name,
                    "sampling": sampling, "permanent": permanent}
         resp = janus._message_request(instance['id'], plugin['id'], message)
+        janus._save_rooms_in_file(list_audiorooms(config), janus._janus_audioroom_cfg)
         return resp
     except Exception as exc:
         raise CommandExecutionError(
@@ -273,6 +274,7 @@ def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=Non
                    "bitrate": bitrate, "publishers": publishers,
                    "permanent": permanent}
         resp = janus._message_request(instance['id'], plugin['id'], message)
+        janus._save_rooms_in_file(list_videorooms(config), janus._janus_videoroom_cfg)
         return resp
     except Exception as exc:
         raise CommandExecutionError(
