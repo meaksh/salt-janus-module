@@ -6,9 +6,9 @@ Available functions:
 - janus.info
 - janus.list_videorooms
 - janus.list_audiorooms
+- janus.list_participants
 - janus.create_videoroom
 - janus.create_audioroom
-- janus.list_participants
 - janus.plugin_message
 - janus.save_rooms_status
 
@@ -33,7 +33,7 @@ or if you are using a masterless configuration (run it on the Minion):
 # salt-call --local saltutil.sync_all
 ```
 
-#### 3. Ready to use. Examples in Masterless configuration (run it on the Minion):
+## Examples in Masterless configuration (run it on the Minion):
 ```
 # salt-call --local janus.list_videorooms
 local:
