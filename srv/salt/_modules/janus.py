@@ -6,7 +6,7 @@ Module to manage Janus WebRTC Gateway
 :depends: - ``janus`` https://janus.conf.meetecho.com/
 '''
 
-from ConfigParser import ConfigParser
+from StringIO import StringIO
 from salt.exceptions import CommandExecutionError
 import salt.utils
 import datetime
@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import random
+import re
 import requests
 
 
@@ -30,9 +31,17 @@ JANUS_CFG_BASE = "/etc/janus/"
 JANUS_VIDEOROOM_CFG = os.path.join(JANUS_CFG_BASE, "janus.plugin.videoroom.cfg")
 JANUS_AUDIOROOM_CFG = os.path.join(JANUS_CFG_BASE, "janus.plugin.audiobridge.cfg")
 
+try:
+    from configobj import ConfigObj
+    HAS_LIB = True
+except ImportError:
+    HAS_LIB = False
+
 
 def __virtual__():
-    if not salt.utils.which('janus'):
+    if not HAS_LIB:
+        return False, "python ConfigObj library not found"
+    elif not salt.utils.which('janus'):
         return (False, 'The Janus WebRTC module cannot be loaded:'
                 ' missing janus')
     return __virtualname__
@@ -86,7 +95,7 @@ class JanusSession(object):
         if not resp.json().get("data"):
             raise self.JanusException(resp.json()['error']['reason'])
         return resp.json().get("data")
-        
+
     def _message_request(self, session_id, plugin_id, message):
         plugin_uri = (self._janus_api_root + "/" + str(session_id) +
                      "/" + str(plugin_id))
@@ -105,11 +114,21 @@ class JanusSession(object):
 
     def _parse_config_file(self, filename):
         if __salt__['file.file_exists'](filename):
-            config = ConfigParser()
-            config.readfp(salt.utils.fopen(filename))
+            with salt.utils.fopen(filename) as f:
+                # FIXME: Currently latest released version of python-configobj (v5.0.6)
+                # only supports '#' as comments marker but Janus uses ';' for comments.
+                #
+                # This workaround modifies the content of the config file to replaces
+                # the comments markers.
+                #
+                # NOTE: Expanding comments markers is already implemented upstream but
+                # is not released yet. We should remove this workaround as soon as
+                # new release is available.
+                file_contents = re.sub(';', '#', f.read())
+            config = ConfigObj(StringIO(file_contents))
             ret = {}
-            for sect in config.sections():
-                ret[sect] = dict(config.items(sect))
+            for sect in config:
+                ret[sect] = config[sect]
             return ret
         else:
             raise self.JanusException("Config file '{0}' does not exist" % filename)
@@ -120,12 +139,22 @@ class JanusSession(object):
                 filename,
                 "{0}-{1}".format(filename, datetime.datetime.now().isoformat())
             )
-            pconfig = ConfigParser()
+            # FIXME: Replacing comments markers
+            with salt.utils.fopen(filename) as f:
+                file_buffer = StringIO(re.sub(';', '#', f.read()))
+            pconfig = ConfigObj(file_buffer)
             for sect in config:
                 section_dict = config.get(sect)
-                pconfig.add_section(sect)
-                [pconfig.set(sect, key, section_dict[key]) for key in section_dict]
-            pconfig.write(salt.utils.fopen(filename, "wb"))
+                if sect not in pconfig:
+                    pconfig[sect] = {}
+                for key in section_dict:
+                    pconfig[sect][key] = section_dict[key]
+            file_buffer.seek(0)
+            pconfig.write(file_buffer)
+            with salt.utils.fopen(filename, "w") as f:
+                file_buffer.seek(0)
+                # Getting back comment markers to ';' before writing the file
+                f.write(re.sub('#', ';', file_buffer.read()))
         else:
             raise self.JanusException("Config file '{0}' does not exist" % filename)
 
