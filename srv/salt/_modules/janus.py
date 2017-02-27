@@ -132,6 +132,16 @@ class JanusSession(object):
     def _save_rooms_in_file(self, rooms, filename):
         config = self._parse_config_file(filename)
         for room in rooms:
+            # 'max_publishers' attribute should be mapped as 'publishers' in the
+            # configuration file.
+            if "max_publishers" in rooms[room]:
+                rooms[room]['publishers'] = rooms[room].pop("max_publishers")
+
+            # 'num_participants' is not needed in configuration file
+            if "num_participants" in rooms[room]:
+                del rooms[room]['num_participants']
+
+            # Room ID needs to be an str
             if room is not str(room):
                 item = rooms.pop(room)
                 rooms[str(room)] = item
