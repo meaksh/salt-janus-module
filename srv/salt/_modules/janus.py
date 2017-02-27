@@ -9,6 +9,7 @@ Module to manage Janus WebRTC Gateway
 from ConfigParser import ConfigParser
 from salt.exceptions import CommandExecutionError
 import salt.utils
+import datetime
 import jinja2
 import json
 import logging
@@ -115,6 +116,10 @@ class JanusSession(object):
 
     def _update_config_file(self, config, filename):
         if __salt__['file.file_exists'](filename):
+            __salt__['file.copy'](
+                filename,
+                "{0}-{1}".format(filename, datetime.datetime.now().isoformat())
+            )
             pconfig = ConfigParser()
             for sect in config:
                 section_dict = config.get(sect)
@@ -262,8 +267,11 @@ def create_audioroom(name, publishers=20, sampling=16000, permanent=True, record
 def create_videoroom(name, publishers=20, bitrate=64, permanent=True, config=None):
     '''
     Create a new videoroom in Janus service instance
+
     CLI example:
+
     .. code-block:: bash
+
         salt '*' janus.create_videoroom "my tests videoroom"
         salt '*' janus.create_videoroom testroom bitrate=128 publishers=50
     '''
